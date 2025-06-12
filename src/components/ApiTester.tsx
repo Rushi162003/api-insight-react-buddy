@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,8 +7,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Send, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, Send, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { Switch } from '@/components/ui/switch';
 
 interface ApiResponse {
   data: any;
@@ -27,6 +27,7 @@ const ApiTester = () => {
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [useCorsProxy, setUseCorsProxy] = useState(false);
 
   const makeRequest = async () => {
     if (!url.trim()) {
@@ -50,16 +51,25 @@ const ApiTester = () => {
         parsedHeaders = {};
       }
 
+      // Use CORS proxy if enabled
+      const requestUrl = useCorsProxy 
+        ? `https://cors-anywhere.herokuapp.com/${url}`
+        : url;
+
       const requestOptions: RequestInit = {
         method,
         headers: parsedHeaders,
+        mode: useCorsProxy ? 'cors' : 'cors',
       };
 
       if (method !== 'GET' && method !== 'HEAD' && requestBody.trim()) {
         requestOptions.body = requestBody;
       }
 
-      const res = await fetch(url, requestOptions);
+      console.log('Making request to:', requestUrl);
+      console.log('Request options:', requestOptions);
+
+      const res = await fetch(requestUrl, requestOptions);
       const endTime = performance.now();
       const timing = Math.round(endTime - startTime);
 
@@ -67,7 +77,11 @@ const ApiTester = () => {
       const contentType = res.headers.get('content-type');
       
       if (contentType && contentType.includes('application/json')) {
-        responseData = await res.json();
+        try {
+          responseData = await res.json();
+        } catch {
+          responseData = await res.text();
+        }
       } else {
         responseData = await res.text();
       }
@@ -93,10 +107,20 @@ const ApiTester = () => {
     } catch (err) {
       const endTime = performance.now();
       const timing = Math.round(endTime - startTime);
-      setError(err instanceof Error ? err.message : 'Unknown error occurred');
+      
+      let errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      
+      // Check if it's a CORS error
+      if (errorMessage.includes('CORS') || errorMessage.includes('fetch')) {
+        errorMessage = `CORS Error: ${errorMessage}. Try enabling CORS proxy or configure the server to allow cross-origin requests.`;
+      }
+      
+      console.error('Request failed:', err);
+      setError(errorMessage);
+      
       toast({
         title: "Request Failed",
-        description: err instanceof Error ? err.message : 'Unknown error occurred',
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -123,8 +147,33 @@ const ApiTester = () => {
     <div className="container mx-auto p-6 max-w-7xl">
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-foreground mb-2">API Tester</h1>
-        <p className="text-muted-foreground">Test your backend APIs with ease</p>
+        <p className="text-muted-foreground">Test your backend APIs with CORS handling</p>
       </div>
+
+      {/* CORS Warning */}
+      <Card className="mb-6 border-orange-200 bg-orange-50">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-orange-500 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-orange-800 mb-2">CORS Issues?</h3>
+              <p className="text-sm text-orange-700 mb-3">
+                If you get CORS errors, try enabling the CORS proxy below or ask the API server owner to add CORS headers.
+              </p>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="cors-proxy"
+                  checked={useCorsProxy}
+                  onCheckedChange={setUseCorsProxy}
+                />
+                <Label htmlFor="cors-proxy" className="text-sm font-medium text-orange-800">
+                  Use CORS Proxy (for testing only)
+                </Label>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Request Panel */}
@@ -260,6 +309,17 @@ const ApiTester = () => {
                   Request Failed
                 </div>
                 <pre className="text-sm text-destructive whitespace-pre-wrap">{error}</pre>
+                {error.includes('CORS') && (
+                  <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
+                    <p className="font-medium mb-1">CORS Solutions:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Enable the CORS proxy toggle above (for testing only)</li>
+                      <li>Ask the API server owner to add proper CORS headers</li>
+                      <li>Use a browser extension like "CORS Unblock" for development</li>
+                      <li>Make requests from your own backend server instead</li>
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 
